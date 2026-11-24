@@ -12,7 +12,7 @@ $finder = Finder::create()
 return new Config()
 	->setRiskyAllowed(true)
 	->setRules([
-		'@PER-CS3x1' => true,
+		'@PER-CS3x0' => true,
 		'declare_strict_types' => true,
 		'strict_param' => true,
 	])
