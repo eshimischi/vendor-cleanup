@@ -26,21 +26,19 @@ if (!$autoloadLoaded) {
     exit(1);
 }
 
-const VERSION = '2.1.0';
+const VERSION = '2.1.2';
 
 $options = getopt('i:e:p:r:dvh', ['include:', 'exclude:', 'path:', 'dir:', 'dry', 'verbose', 'help']);
 if ($options === false) {
     exit(1);
 }
 
-$normalized = [];
-foreach ($options as $key => $value) {
-    $normalized[(string) $key] = $value;
-}
+$getOpt = static fn(string $short, string $long): mixed => $options[$long] ?? $options[$short] ?? null;
+$hasOpt = static fn(string $short, string $long): bool => array_key_exists($long, $options) || array_key_exists($short, $options);
 
 echo 'Cleanup v' . VERSION . PHP_EOL . PHP_EOL;
 
-if (isset($normalized['h'])) {
+if ($hasOpt('h', 'help')) {
     echo "\e[0;33mUsage:\e[0m" . PHP_EOL;
     echo '  cleanup [options]' . PHP_EOL . PHP_EOL;
 
@@ -63,17 +61,20 @@ $parseCsv = static fn(mixed $raw): array => is_string($raw) && $raw !== ''
         ? array_map(trim(...), explode(',', $raw))
         : [];
 
-$dryRun = isset($normalized['d']);
-$verbose = isset($normalized['v']) || $dryRun;
-$subPath = isset($normalized['p']) && is_string($normalized['p']) ? $normalized['p'] : null;
-$customDir = isset($normalized['r']) && is_string($normalized['r']) ? $normalized['r'] : null;
+$dryRun = $hasOpt('d', 'dry');
+$verbose = $hasOpt('v', 'verbose') || $dryRun;
+$rawPath = $getOpt('p', 'path');
+$rawDir = $getOpt('r', 'dir');
+
+$subPath = is_string($rawPath) ? $rawPath : null;
+$customDir = is_string($rawDir) ? $rawDir : null;
 
 try {
-    $targetPath = (new VendorLocator())->resolve($subPath, $customDir);
+    $targetPath = new VendorLocator()->resolve($subPath, $customDir);
     $config = CleanupConfig::create(
             targetPath: $targetPath,
-            include: $parseCsv($normalized['i'] ?? null),
-            exclude: $parseCsv($normalized['e'] ?? null),
+            include: $parseCsv($getOpt('i', 'include')),
+            exclude: $parseCsv($getOpt('e', 'exclude')),
             dryRun: $dryRun,
             verbose: $verbose,
     );
@@ -82,7 +83,7 @@ try {
         echo 'Target: ' . $config->targetPath . PHP_EOL . PHP_EOL;
     }
 
-    $objects = (new Cleaner())->run(
+    $objects = new Cleaner()->run(
             $config,
             static function (string $path) use ($verbose): void {
                 if ($verbose) {
