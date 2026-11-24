@@ -53,6 +53,25 @@ final class CleanerTest extends TestCase
         @rmdir($this->tempDir);
     }
 
+    public function testDoesNotDeletePhpClassesMatchingDocPrefixes(): void
+    {
+        mkdir($this->tempDir . '/pkg/src/Chat/History', 0777, true);
+        file_put_contents($this->tempDir . '/pkg/src/Chat/History/ChatHistory.php', '<?php');
+        file_put_contents($this->tempDir . '/pkg/src/HistoryItemResult.php', '<?php');
+        file_put_contents($this->tempDir . '/pkg/src/UpgradeManager.php', '<?php');
+        file_put_contents($this->tempDir . '/pkg/HISTORY.md', '# History');
+        file_put_contents($this->tempDir . '/pkg/CHANGELOG', 'v1.0');
+
+        $config = CleanupConfig::create(targetPath: $this->tempDir);
+        (new Cleaner())->run($config, static function (string $path): void {});
+
+        self::assertFileExists($this->tempDir . '/pkg/src/Chat/History/ChatHistory.php');
+        self::assertFileExists($this->tempDir . '/pkg/src/HistoryItemResult.php');
+        self::assertFileExists($this->tempDir . '/pkg/src/UpgradeManager.php');
+        self::assertFileDoesNotExist($this->tempDir . '/pkg/HISTORY.md');
+        self::assertFileDoesNotExist($this->tempDir . '/pkg/CHANGELOG');
+    }
+
     public function testDryRunDoesNotDeleteFiles(): void
     {
         $config = CleanupConfig::create(targetPath: $this->tempDir, dryRun: true);

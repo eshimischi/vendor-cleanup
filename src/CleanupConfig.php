@@ -7,9 +7,11 @@ namespace Eshimischi\VendorCleanup;
 final readonly class CleanupConfig
 {
     /**
+     * Директории, которые безопасно удалять в корне пакетов (вне src/ и lib/)
+     *
      * @var list<string>
      */
-    public const array DEFAULT_PATTERNS = [
+    public const array DEFAULT_DIRECTORY_PATTERNS = [
         '.git',
         '.github',
         'test',
@@ -20,17 +22,35 @@ final readonly class CleanupConfig
         'examples',
         'doc',
         'docs',
+    ];
+
+    /**
+     * Файловые паттерны (применяются только к файлам, никогда к директориям)
+     *
+     * @var list<string>
+     */
+    public const array DEFAULT_PATTERNS = [
+        ...self::DEFAULT_DIRECTORY_PATTERNS,
         'license',
-        'changelog*',
-        'changes*',
+        'license.*',
+        'changelog',
+        'changelog.*',
+        'changes',
+        'changes.*',
         'faq',
-        'contributing*',
-        'history*',
-        'upgrading*',
-        'upgrade*',
-        'readme*',
+        'faq.*',
+        'contributing',
+        'contributing.*',
+        'history.*',
+        'upgrading',
+        'upgrading.*',
+        'upgrade',
+        'upgrade.*',
+        'readme',
+        'readme.*',
         '{,.}*.yml',
         '*.md',
+        '*.rst',
         '*.xml',
         '*.txt',
         '*.dist',

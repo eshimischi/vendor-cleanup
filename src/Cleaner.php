@@ -17,15 +17,20 @@ final readonly class Cleaner
     {
         $regexes = array_map($this->patternToRegex(...), $config->patterns);
 
-        return $this->scanDirectory($config->targetPath, $regexes, $config->dryRun, $onMatch);
+        return $this->scanDirectory($config->targetPath, $regexes, $config->dryRun, $onMatch, false);
     }
 
     /**
      * @param list<string> $regexes
      * @param Closure(string): void $onMatch
      */
-    private function scanDirectory(string $directory, array $regexes, bool $dryRun, Closure $onMatch): int
-    {
+    private function scanDirectory(
+        string $directory,
+        array $regexes,
+        bool $dryRun,
+        Closure $onMatch,
+        bool $insideSourceDir,
+    ): int {
         $count = 0;
         $iterator = new FilesystemIterator(
             $directory,
@@ -34,9 +39,18 @@ final readonly class Cleaner
 
         /** @var SplFileInfo $item */
         foreach ($iterator as $item) {
-            $pathname = $item->getPathname();
+            if ($this->isProtectedPhpFile($item)) {
+                continue;
+            }
 
-            if ($this->matches($item->getFilename(), $regexes)) {
+            $pathname = $item->getPathname();
+            $filename = $item->getFilename();
+            $isDirectory = !$item->isLink() && $item->isDir();
+
+            // Не удаляем директории с PSR-4 неймспейсами внутри src/ или lib/ (например, src/Chat/History или src/Test)
+            $canMatch = !$isDirectory || !$insideSourceDir;
+
+            if ($canMatch && $this->matches($filename, $regexes)) {
                 $onMatch($pathname);
 
                 if (!$dryRun) {
@@ -45,19 +59,33 @@ final readonly class Cleaner
 
                 $count++;
 
-                // В режиме dry-run продолжаем сканирование внутри совпавшей папки,
-                // а при реальном удалении папки уже не существует — пропускаем спуск.
                 if (!$dryRun) {
                     continue;
                 }
             }
 
-            if (!$item->isLink() && $item->isDir()) {
-                $count += $this->scanDirectory($pathname, $regexes, $dryRun, $onMatch);
+            if ($isDirectory) {
+                $nextInsideSource = $insideSourceDir || in_array(strtolower($filename), ['src', 'lib'], true);
+                $count += $this->scanDirectory($pathname, $regexes, $dryRun, $onMatch, $nextInsideSource);
             }
         }
 
         return $count;
+    }
+
+    private function isProtectedPhpFile(SplFileInfo $item): bool
+    {
+        if ($item->isDir() || $item->isLink()) {
+            return false;
+        }
+
+        $filename = strtolower($item->getFilename());
+
+        if (str_starts_with($filename, '.php')) {
+            return false;
+        }
+
+        return str_ends_with($filename, '.php');
     }
 
     /**
