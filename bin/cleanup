@@ -1,0 +1,104 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+use Eshimischi\VendorCleanup\Cleaner;
+use Eshimischi\VendorCleanup\CleanupConfig;
+use Eshimischi\VendorCleanup\VendorLocator;
+
+$autoloadPaths = [
+    __DIR__ . '/../vendor/autoload.php',
+    __DIR__ . '/../../../autoload.php',
+];
+
+$autoloadLoaded = false;
+foreach ($autoloadPaths as $autoloadPath) {
+    if (is_file($autoloadPath)) {
+        require $autoloadPath;
+        $autoloadLoaded = true;
+        break;
+    }
+}
+
+if (!$autoloadLoaded) {
+    fwrite(STDERR, "Composer autoload.php not found.\n");
+    exit(1);
+}
+
+const VERSION = '2.0.0';
+
+$options = getopt('i:e:p:dvh', ['include:', 'exclude:', 'path:', 'dry', 'verbose', 'help']);
+if ($options === false) {
+    exit(1);
+}
+
+$normalized = [];
+foreach ($options as $key => $value) {
+    $normalized[(string) $key] = $value;
+}
+
+echo 'Cleanup v' . VERSION . PHP_EOL . PHP_EOL;
+
+if (isset($normalized['h'])) {
+    echo "\e[0;33mUsage:\e[0m" . PHP_EOL;
+    echo '  cleanup [options]' . PHP_EOL . PHP_EOL;
+
+    echo "\e[0;33mOptions:\e[0m" . PHP_EOL;
+    echo "  \e[0;32m-h, --help    \e[0m  Display this help message" . PHP_EOL;
+    echo "  \e[0;32m-i, --include \e[0m  Add patterns for common files, comma separated" . PHP_EOL;
+    echo "  \e[0;32m-e, --exclude \e[0m  Remove patterns for common files, comma separated" . PHP_EOL;
+    echo "  \e[0;32m-v, --verbose \e[0m  Increase the verbosity of messages" . PHP_EOL;
+    echo "  \e[0;32m-p, --path    \e[0m  Find on specific path inside vendor" . PHP_EOL;
+    echo "  \e[0;32m-d, --dry     \e[0m  Run without actual remove" . PHP_EOL . PHP_EOL;
+
+    echo "\e[0;33mExample:\e[0m" . PHP_EOL;
+    echo '  cleanup -v --path symfony --include *.zip,*.rar --exclude doc,docs,test' . PHP_EOL;
+    exit(0);
+}
+
+$parseCsv = static fn(mixed $raw): array => is_string($raw) && $raw !== ''
+    ? array_map(trim(...), explode(',', $raw))
+    : [];
+
+$dryRun = isset($normalized['d']);
+$verbose = isset($normalized['v']) || $dryRun;
+$subPath = isset($normalized['p']) && is_string($normalized['p']) ? $normalized['p'] : null;
+
+try {
+    $targetPath = new VendorLocator()->resolve($subPath);
+    $config = CleanupConfig::create(
+        targetPath: $targetPath,
+        include: $parseCsv($normalized['i'] ?? null),
+        exclude: $parseCsv($normalized['e'] ?? null),
+        dryRun: $dryRun,
+        verbose: $verbose,
+    );
+
+    if ($verbose) {
+        echo 'Target: ' . $config->targetPath . PHP_EOL . PHP_EOL;
+    }
+
+    $objects = new Cleaner()->run(
+        $config,
+        static function (string $path) use ($verbose): void {
+            if ($verbose) {
+                echo $path . PHP_EOL;
+            } else {
+                echo '.';
+            }
+        },
+    );
+} catch (Throwable $e) {
+    fwrite(STDERR, "\e[0;31mError:\e[0m " . $e->getMessage() . PHP_EOL);
+    exit(1);
+}
+
+if ($objects > 0) {
+    $action = $dryRun ? 'will be deleted!' : 'successfully deleted!';
+    echo PHP_EOL . $objects . ' object(s) ' . $action . PHP_EOL;
+} else {
+    echo 'No objects found for deletion!' . PHP_EOL;
+}
+
+exit(0);

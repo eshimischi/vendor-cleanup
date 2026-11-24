@@ -1,0 +1,60 @@
+{
+  "name": "eshimischi/vendor-cleanup",
+  "description": "Global CLI tool & Composer plugin to strip tests, docs, and dev files from vendor in production",
+  "keywords": [
+    "composer",
+    "plugin",
+    "cleanup",
+    "vendor",
+    "production",
+    "size",
+    "optimize"
+  ],
+  "homepage": "https://github.com/eshimischi/vendor-cleanup",
+  "type": "composer-plugin",
+  "license": "MIT",
+  "authors": [
+    {
+      "name": "eshimischi",
+      "homepage": "https://github.com/eshimischi"
+    }
+  ],
+  "require": {
+    "php": "^8.5",
+    "composer-plugin-api": "^2.6"
+  },
+  "require-dev": {
+    "composer/composer": "^2.11",
+    "friendsofphp/php-cs-fixer": "^3.95",
+    "phpstan/phpstan": "^2.3",
+    "phpunit/phpunit": "^13.0"
+  },
+  "autoload": {
+    "psr-4": {
+      "Eshimischi\\VendorCleanup\\": "src/"
+    }
+  },
+  "autoload-dev": {
+    "psr-4": {
+      "Eshimischi\\VendorCleanup\\Tests\\": "tests/"
+    }
+  },
+  "bin": [
+    "bin/cleanup"
+  ],
+  "extra": {
+    "class": "Eshimischi\\VendorCleanup\\CleanupPlugin"
+  },
+  "scripts": {
+    "cs:check": "php-cs-fixer fix --dry-run --diff",
+    "cs:fix": "php-cs-fixer fix",
+    "analyse": "phpstan analyse",
+    "test": "phpunit"
+  },
+  "config": {
+    "sort-packages": true,
+    "allow-plugins": {
+      "eshimischi/vendor-cleanup": true
+    }
+  }
+}
