@@ -8,8 +8,12 @@ use RuntimeException;
 
 final readonly class VendorLocator
 {
-    public function resolve(?string $subPath = null): string
+    public function resolve(?string $subPath = null, ?string $customDir = null): string
     {
+        if ($customDir !== null && $customDir !== '') {
+            return $this->resolveProjectRelativeDir($customDir);
+        }
+
         $vendorDir = $this->detectVendorDir();
         $realVendor = realpath($vendorDir);
 
@@ -36,13 +40,34 @@ final readonly class VendorLocator
         return $target;
     }
 
-    private function detectVendorDir(): string
+    private function resolveProjectRelativeDir(string $dir): string
     {
-        $envVendor = getenv('COMPOSER_VENDOR_DIR');
-        if (is_string($envVendor) && $envVendor !== '') {
-            return $envVendor;
+        $projectRoot = $this->detectProjectRoot();
+        $realRoot = realpath($projectRoot);
+
+        if ($realRoot === false) {
+            throw new RuntimeException('Unable to resolve project root directory.');
         }
 
+        $candidate = str_starts_with($dir, '/')
+            ? $dir
+            : $realRoot . DIRECTORY_SEPARATOR . ltrim($dir, '/\\');
+
+        $realTarget = realpath($candidate);
+
+        if ($realTarget === false || !is_dir($realTarget)) {
+            throw new RuntimeException(sprintf('Target directory not found: "%s".', $dir));
+        }
+
+        if (!str_starts_with($realTarget, $realRoot)) {
+            throw new RuntimeException('Path traversal outside of project root is forbidden.');
+        }
+
+        return $realTarget;
+    }
+
+    private function detectProjectRoot(): string
+    {
         $cwd = getcwd();
         if ($cwd === false) {
             throw new RuntimeException('Unable to determine current working directory.');
@@ -50,9 +75,8 @@ final readonly class VendorLocator
 
         $current = $cwd;
         while (true) {
-            $composerJson = $current . DIRECTORY_SEPARATOR . 'composer.json';
-            if (is_file($composerJson)) {
-                return $this->extractVendorFromComposerJson($composerJson, $current);
+            if (is_file($current . DIRECTORY_SEPARATOR . 'composer.json')) {
+                return $current;
             }
 
             $parent = dirname($current);
@@ -62,7 +86,24 @@ final readonly class VendorLocator
             $current = $parent;
         }
 
-        return $cwd . DIRECTORY_SEPARATOR . 'vendor';
+        return $cwd;
+    }
+
+    private function detectVendorDir(): string
+    {
+        $envVendor = getenv('COMPOSER_VENDOR_DIR');
+        if (is_string($envVendor) && $envVendor !== '') {
+            return $envVendor;
+        }
+
+        $projectRoot = $this->detectProjectRoot();
+        $composerJson = $projectRoot . DIRECTORY_SEPARATOR . 'composer.json';
+
+        if (is_file($composerJson)) {
+            return $this->extractVendorFromComposerJson($composerJson, $projectRoot);
+        }
+
+        return $projectRoot . DIRECTORY_SEPARATOR . 'vendor';
     }
 
     private function extractVendorFromComposerJson(string $composerJsonPath, string $projectRoot): string

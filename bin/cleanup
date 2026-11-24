@@ -8,8 +8,8 @@ use Eshimischi\VendorCleanup\CleanupConfig;
 use Eshimischi\VendorCleanup\VendorLocator;
 
 $autoloadPaths = [
-    __DIR__ . '/../vendor/autoload.php',
-    __DIR__ . '/../../../autoload.php',
+        __DIR__ . '/../vendor/autoload.php',
+        __DIR__ . '/../../../autoload.php',
 ];
 
 $autoloadLoaded = false;
@@ -26,9 +26,9 @@ if (!$autoloadLoaded) {
     exit(1);
 }
 
-const VERSION = '2.0.0';
+const VERSION = '2.1.0';
 
-$options = getopt('i:e:p:dvh', ['include:', 'exclude:', 'path:', 'dry', 'verbose', 'help']);
+$options = getopt('i:e:p:r:dvh', ['include:', 'exclude:', 'path:', 'dir:', 'dry', 'verbose', 'help']);
 if ($options === false) {
     exit(1);
 }
@@ -50,44 +50,47 @@ if (isset($normalized['h'])) {
     echo "  \e[0;32m-e, --exclude \e[0m  Remove patterns for common files, comma separated" . PHP_EOL;
     echo "  \e[0;32m-v, --verbose \e[0m  Increase the verbosity of messages" . PHP_EOL;
     echo "  \e[0;32m-p, --path    \e[0m  Find on specific path inside vendor" . PHP_EOL;
+    echo "  \e[0;32m-r, --dir     \e[0m  Target custom directory relative to project root (e.g. modules/dalee.core)" . PHP_EOL;
     echo "  \e[0;32m-d, --dry     \e[0m  Run without actual remove" . PHP_EOL . PHP_EOL;
 
-    echo "\e[0;33mExample:\e[0m" . PHP_EOL;
+    echo "\e[0;33mExamples:\e[0m" . PHP_EOL;
     echo '  cleanup -v --path symfony --include *.zip,*.rar --exclude doc,docs,test' . PHP_EOL;
+    echo '  cleanup -v --dir modules/dalee.core --dry' . PHP_EOL;
     exit(0);
 }
 
 $parseCsv = static fn(mixed $raw): array => is_string($raw) && $raw !== ''
-    ? array_map(trim(...), explode(',', $raw))
-    : [];
+        ? array_map(trim(...), explode(',', $raw))
+        : [];
 
 $dryRun = isset($normalized['d']);
 $verbose = isset($normalized['v']) || $dryRun;
 $subPath = isset($normalized['p']) && is_string($normalized['p']) ? $normalized['p'] : null;
+$customDir = isset($normalized['r']) && is_string($normalized['r']) ? $normalized['r'] : null;
 
 try {
-    $targetPath = new VendorLocator()->resolve($subPath);
+    $targetPath = (new VendorLocator())->resolve($subPath, $customDir);
     $config = CleanupConfig::create(
-        targetPath: $targetPath,
-        include: $parseCsv($normalized['i'] ?? null),
-        exclude: $parseCsv($normalized['e'] ?? null),
-        dryRun: $dryRun,
-        verbose: $verbose,
+            targetPath: $targetPath,
+            include: $parseCsv($normalized['i'] ?? null),
+            exclude: $parseCsv($normalized['e'] ?? null),
+            dryRun: $dryRun,
+            verbose: $verbose,
     );
 
     if ($verbose) {
         echo 'Target: ' . $config->targetPath . PHP_EOL . PHP_EOL;
     }
 
-    $objects = new Cleaner()->run(
-        $config,
-        static function (string $path) use ($verbose): void {
-            if ($verbose) {
-                echo $path . PHP_EOL;
-            } else {
-                echo '.';
-            }
-        },
+    $objects = (new Cleaner())->run(
+            $config,
+            static function (string $path) use ($verbose): void {
+                if ($verbose) {
+                    echo $path . PHP_EOL;
+                } else {
+                    echo '.';
+                }
+            },
     );
 } catch (Throwable $e) {
     fwrite(STDERR, "\e[0;31mError:\e[0m " . $e->getMessage() . PHP_EOL);
