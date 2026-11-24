@@ -16,6 +16,7 @@ final class CleanerTest extends TestCase
     /**
      * @throws RandomException
      */
+    #[\Override]
     protected function setUp(): void
     {
         $this->tempDir = sys_get_temp_dir() . '/vendor_cleanup_test_' . bin2hex(random_bytes(6));
@@ -30,6 +31,7 @@ final class CleanerTest extends TestCase
         file_put_contents($this->tempDir . '/pkg/.travis.yml', 'language: php');
     }
 
+    #[\Override]
     protected function tearDown(): void
     {
         if (!is_dir($this->tempDir)) {
@@ -63,7 +65,7 @@ final class CleanerTest extends TestCase
         file_put_contents($this->tempDir . '/pkg/CHANGELOG', 'v1.0');
 
         $config = CleanupConfig::create(targetPath: $this->tempDir);
-        (new Cleaner())->run($config, static function (string $path): void {});
+        new Cleaner()->run($config, static function (string $path): void {});
 
         self::assertFileExists($this->tempDir . '/pkg/src/Chat/History/ChatHistory.php');
         self::assertFileExists($this->tempDir . '/pkg/src/HistoryItemResult.php');
@@ -72,12 +74,29 @@ final class CleanerTest extends TestCase
         self::assertFileDoesNotExist($this->tempDir . '/pkg/CHANGELOG');
     }
 
+    public function testDoesNotDeleteFrontendSourceFilesMatchingDocPrefixes(): void
+    {
+        mkdir($this->tempDir . '/pkg/install/components/iblock.history', 0777, true);
+        file_put_contents($this->tempDir . '/pkg/install/components/iblock.history/history.ts', 'export const x = 1;');
+        file_put_contents($this->tempDir . '/pkg/install/components/iblock.history/changelog.js', 'console.log(1);');
+        file_put_contents($this->tempDir . '/pkg/install/components/iblock.history/history.css', '.a {}');
+        file_put_contents($this->tempDir . '/pkg/HISTORY.md', '# History');
+
+        $config = CleanupConfig::create(targetPath: $this->tempDir);
+        new Cleaner()->run($config, static function (string $path): void {});
+
+        self::assertFileExists($this->tempDir . '/pkg/install/components/iblock.history/history.ts');
+        self::assertFileExists($this->tempDir . '/pkg/install/components/iblock.history/changelog.js');
+        self::assertFileExists($this->tempDir . '/pkg/install/components/iblock.history/history.css');
+        self::assertFileDoesNotExist($this->tempDir . '/pkg/HISTORY.md');
+    }
+
     public function testDryRunDoesNotDeleteFiles(): void
     {
         $config = CleanupConfig::create(targetPath: $this->tempDir, dryRun: true);
         $matched = [];
 
-        $count = (new Cleaner())->run($config, static function (string $path) use (&$matched): void {
+        $count = new Cleaner()->run($config, static function (string $path) use (&$matched): void {
             $matched[] = basename($path);
         });
 
@@ -109,7 +128,7 @@ final class CleanerTest extends TestCase
         symlink($externalDir, $this->tempDir . '/pkg/tests-link');
 
         $config = CleanupConfig::create(targetPath: $this->tempDir, include: ['tests-link']);
-        (new Cleaner())->run($config, static function (string $path): void {});
+        new Cleaner()->run($config, static function (string $path): void {});
 
         self::assertFalse(is_link($this->tempDir . '/pkg/tests-link'));
         self::assertFileExists($importantFile);

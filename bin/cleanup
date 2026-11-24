@@ -26,7 +26,7 @@ if (!$autoloadLoaded) {
     exit(1);
 }
 
-const VERSION = '2.1.2';
+const VERSION = '2.1.3';
 
 $options = getopt('i:e:p:r:dvh', ['include:', 'exclude:', 'path:', 'dir:', 'dry', 'verbose', 'help']);
 if ($options === false) {

@@ -11,6 +11,25 @@ use SplFileInfo;
 final readonly class Cleaner
 {
     /**
+     * @var list<string>
+     */
+    private const array PROTECTED_EXTENSIONS = [
+        'php',
+        'ts',
+        'tsx',
+        'js',
+        'jsx',
+        'mjs',
+        'cjs',
+        'vue',
+        'svelte',
+        'css',
+        'scss',
+        'sass',
+        'less',
+    ];
+
+    /**
      * @param Closure(string): void $onMatch
      */
     public function run(CleanupConfig $config, Closure $onMatch): int
@@ -39,7 +58,7 @@ final readonly class Cleaner
 
         /** @var SplFileInfo $item */
         foreach ($iterator as $item) {
-            if ($this->isProtectedPhpFile($item)) {
+            if ($this->isProtectedSourceFile($item)) {
                 continue;
             }
 
@@ -47,7 +66,6 @@ final readonly class Cleaner
             $filename = $item->getFilename();
             $isDirectory = !$item->isLink() && $item->isDir();
 
-            // Не удаляем директории с PSR-4 неймспейсами внутри src/ или lib/ (например, src/Chat/History или src/Test)
             $canMatch = !$isDirectory || !$insideSourceDir;
 
             if ($canMatch && $this->matches($filename, $regexes)) {
@@ -65,7 +83,7 @@ final readonly class Cleaner
             }
 
             if ($isDirectory) {
-                $nextInsideSource = $insideSourceDir || in_array(strtolower($filename), ['src', 'lib'], true);
+                $nextInsideSource = $insideSourceDir || in_array(strtolower($filename), ['src', 'lib', 'install', 'components', 'templates'], true);
                 $count += $this->scanDirectory($pathname, $regexes, $dryRun, $onMatch, $nextInsideSource);
             }
         }
@@ -73,7 +91,7 @@ final readonly class Cleaner
         return $count;
     }
 
-    private function isProtectedPhpFile(SplFileInfo $item): bool
+    private function isProtectedSourceFile(SplFileInfo $item): bool
     {
         if ($item->isDir() || $item->isLink()) {
             return false;
@@ -81,11 +99,13 @@ final readonly class Cleaner
 
         $filename = strtolower($item->getFilename());
 
-        if (str_starts_with($filename, '.php')) {
+        if (str_starts_with($filename, '.')) {
             return false;
         }
 
-        return str_ends_with($filename, '.php');
+        $extension = strtolower($item->getExtension());
+
+        return in_array($extension, self::PROTECTED_EXTENSIONS, true);
     }
 
     /**
