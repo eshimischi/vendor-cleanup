@@ -1,8 +1,8 @@
 # Vendor Cleanup
 
-[![PHP Version](https://shields.io)](https://php.net)
-[![Coding Standard](https://shields.io)](https://php-fig.org)
-[![License](https://shields.io)](LICENSE)
+[![PHP Version](https://img.shields.io/badge/php-%3E%3D%208.5-8892BF.svg?style=flat-square)](https://php.net/)
+[![Coding Standard](https://img.shields.io/badge/PER-3.1-blue)](https://php-fig.org)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 Global CLI utility and Composer plugin to strip tests, documentation, CI configs, and other non-production files from `vendor` or custom project directories while protecting source code (`.php`, `.ts`, `.js`, `.vue`, `.css`, etc.) and symlinks.
 
