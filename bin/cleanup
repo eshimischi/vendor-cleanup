@@ -5,6 +5,7 @@ declare(strict_types=1);
 
 use Eshimischi\VendorCleanup\Cleaner;
 use Eshimischi\VendorCleanup\CleanupConfig;
+use Eshimischi\VendorCleanup\IgnoreList;
 use Eshimischi\VendorCleanup\VendorLocator;
 
 $autoloadPaths = [
@@ -26,9 +27,9 @@ if (!$autoloadLoaded) {
     exit(1);
 }
 
-const VERSION = '2.1.3';
+const VERSION = '2.2.0';
 
-$options = getopt('i:e:p:r:dvh', ['include:', 'exclude:', 'path:', 'dir:', 'dry', 'verbose', 'help']);
+$options = getopt('i:e:p:r:dvh', ['include:', 'exclude:', 'path:', 'dir:', 'ignore-file:', 'dry', 'verbose', 'help']);
 if ($options === false) {
     exit(1);
 }
@@ -43,13 +44,14 @@ if ($hasOpt('h', 'help')) {
     echo '  cleanup [options]' . PHP_EOL . PHP_EOL;
 
     echo "\e[0;33mOptions:\e[0m" . PHP_EOL;
-    echo "  \e[0;32m-h, --help    \e[0m  Display this help message" . PHP_EOL;
-    echo "  \e[0;32m-i, --include \e[0m  Add patterns for common files, comma separated" . PHP_EOL;
-    echo "  \e[0;32m-e, --exclude \e[0m  Remove patterns for common files, comma separated" . PHP_EOL;
-    echo "  \e[0;32m-v, --verbose \e[0m  Increase the verbosity of messages" . PHP_EOL;
-    echo "  \e[0;32m-p, --path    \e[0m  Find on specific path inside vendor" . PHP_EOL;
-    echo "  \e[0;32m-r, --dir     \e[0m  Target custom directory relative to project root (e.g. modules/dalee.core)" . PHP_EOL;
-    echo "  \e[0;32m-d, --dry     \e[0m  Run without actual remove" . PHP_EOL . PHP_EOL;
+    echo "  \e[0;32m-h, --help        \e[0m  Display this help message" . PHP_EOL;
+    echo "  \e[0;32m-i, --include     \e[0m  Add patterns for common files, comma separated" . PHP_EOL;
+    echo "  \e[0;32m-e, --exclude     \e[0m  Remove patterns for common files, comma separated" . PHP_EOL;
+    echo "  \e[0;32m-v, --verbose     \e[0m  Display detailed list of removed directories and files" . PHP_EOL;
+    echo "  \e[0;32m-p, --path        \e[0m  Find on specific path inside vendor" . PHP_EOL;
+    echo "  \e[0;32m-r, --dir         \e[0m  Target custom directory relative to project root" . PHP_EOL;
+    echo "  \e[0;32m    --ignore-file \e[0m  Path to custom .cleanupignore file" . PHP_EOL;
+    echo "  \e[0;32m-d, --dry         \e[0m  Run without actual remove" . PHP_EOL . PHP_EOL;
 
     echo "\e[0;33mExamples:\e[0m" . PHP_EOL;
     echo '  cleanup -v --path symfony --include *.zip,*.rar --exclude doc,docs,test' . PHP_EOL;
@@ -61,33 +63,68 @@ $parseCsv = static fn(mixed $raw): array => is_string($raw) && $raw !== ''
         ? array_map(trim(...), explode(',', $raw))
         : [];
 
+$formatBytes = static function (int $bytes): string {
+    if ($bytes < 1024) {
+        return $bytes . ' B';
+    }
+    if ($bytes < 1024 * 1024) {
+        return round($bytes / 1024, 1) . ' KB';
+    }
+
+    return round($bytes / 1024 / 1024, 2) . ' MB';
+};
+
 $dryRun = $hasOpt('d', 'dry');
 $verbose = $hasOpt('v', 'verbose') || $dryRun;
 $rawPath = $getOpt('p', 'path');
 $rawDir = $getOpt('r', 'dir');
+$rawIgnore = $options['ignore-file'] ?? null;
 
 $subPath = is_string($rawPath) ? $rawPath : null;
 $customDir = is_string($rawDir) ? $rawDir : null;
 
 try {
     $targetPath = new VendorLocator()->resolve($subPath, $customDir);
+
+    $ignoreFiles = [
+            (getcwd() ?: '') . DIRECTORY_SEPARATOR . '.cleanupignore',
+            $targetPath . DIRECTORY_SEPARATOR . '.cleanupignore',
+    ];
+    if (is_string($rawIgnore) && $rawIgnore !== '') {
+        $ignoreFiles[] = $rawIgnore;
+    }
+
+    $ignoreList = IgnoreList::fromFiles(...$ignoreFiles);
+
     $config = CleanupConfig::create(
             targetPath: $targetPath,
             include: $parseCsv($getOpt('i', 'include')),
             exclude: $parseCsv($getOpt('e', 'exclude')),
             dryRun: $dryRun,
             verbose: $verbose,
+            ignoreList: $ignoreList,
     );
 
     if ($verbose) {
-        echo 'Target: ' . $config->targetPath . PHP_EOL . PHP_EOL;
+        echo 'Target: ' . $config->targetPath . PHP_EOL;
+        foreach ($ignoreFiles as $ignoreFile) {
+            if ($ignoreFile !== DIRECTORY_SEPARATOR . '.cleanupignore' && is_file($ignoreFile)) {
+                echo 'Ignore file: ' . $ignoreFile . PHP_EOL;
+            }
+        }
+        echo PHP_EOL;
     }
 
-    $objects = new Cleaner()->run(
+    $result = new Cleaner()->run(
             $config,
-            static function (string $path) use ($verbose): void {
+            static function (string $path, bool $isDir, int $bytes) use ($verbose, $targetPath, $formatBytes): void {
                 if ($verbose) {
-                    echo $path . PHP_EOL;
+                    $label = $isDir ? "\e[0;34m[DIR ]\e[0m" : "\e[0;33m[FILE]\e[0m";
+                    $relPath = $targetPath
+                               |> strlen(...)
+                               |> (static fn ($x) => substr($path, $x))
+                               |> (static fn ($x) => ltrim($x, '/\\'));
+                    echo sprintf('  %s %s (%s)%s', $label, $relPath, $formatBytes($bytes), PHP_EOL);
                 } else {
                     echo '.';
                 }
@@ -98,9 +135,12 @@ try {
     exit(1);
 }
 
+$objects = $result['count'];
+$saved = $formatBytes($result['bytes']);
+
 if ($objects > 0) {
-    $action = $dryRun ? 'will be deleted!' : 'successfully deleted!';
-    echo PHP_EOL . $objects . ' object(s) ' . $action . PHP_EOL;
+    $action = $dryRun ? 'will be deleted' : 'successfully deleted';
+    echo PHP_EOL . sprintf('%d object(s) %s (%s).', $objects, $action, $saved) . PHP_EOL;
 } else {
     echo 'No objects found for deletion!' . PHP_EOL;
 }

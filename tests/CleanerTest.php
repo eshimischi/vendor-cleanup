@@ -6,16 +6,17 @@ namespace Eshimischi\VendorCleanup\Tests;
 
 use Eshimischi\VendorCleanup\Cleaner;
 use Eshimischi\VendorCleanup\CleanupConfig;
+use Eshimischi\VendorCleanup\IgnoreList;
+use FilesystemIterator;
 use PHPUnit\Framework\TestCase;
-use Random\RandomException;
+use RecursiveDirectoryIterator;
+use RecursiveIteratorIterator;
+use SplFileInfo;
 
 final class CleanerTest extends TestCase
 {
     private string $tempDir;
 
-    /**
-     * @throws RandomException
-     */
     #[\Override]
     protected function setUp(): void
     {
@@ -38,12 +39,12 @@ final class CleanerTest extends TestCase
             return;
         }
 
-        $iterator = new \RecursiveIteratorIterator(
-            new \RecursiveDirectoryIterator($this->tempDir, \FilesystemIterator::SKIP_DOTS),
-            \RecursiveIteratorIterator::CHILD_FIRST,
+        $iterator = new RecursiveIteratorIterator(
+            new RecursiveDirectoryIterator($this->tempDir, FilesystemIterator::SKIP_DOTS),
+            RecursiveIteratorIterator::CHILD_FIRST,
         );
 
-        /** @var \SplFileInfo $item */
+        /** @var SplFileInfo $item */
         foreach ($iterator as $item) {
             if ($item->isLink() || !$item->isDir()) {
                 @unlink($item->getPathname());
@@ -55,52 +56,20 @@ final class CleanerTest extends TestCase
         @rmdir($this->tempDir);
     }
 
-    public function testDoesNotDeletePhpClassesMatchingDocPrefixes(): void
-    {
-        mkdir($this->tempDir . '/pkg/src/Chat/History', 0777, true);
-        file_put_contents($this->tempDir . '/pkg/src/Chat/History/ChatHistory.php', '<?php');
-        file_put_contents($this->tempDir . '/pkg/src/HistoryItemResult.php', '<?php');
-        file_put_contents($this->tempDir . '/pkg/src/UpgradeManager.php', '<?php');
-        file_put_contents($this->tempDir . '/pkg/HISTORY.md', '# History');
-        file_put_contents($this->tempDir . '/pkg/CHANGELOG', 'v1.0');
-
-        $config = CleanupConfig::create(targetPath: $this->tempDir);
-        new Cleaner()->run($config, static function (string $path): void {});
-
-        self::assertFileExists($this->tempDir . '/pkg/src/Chat/History/ChatHistory.php');
-        self::assertFileExists($this->tempDir . '/pkg/src/HistoryItemResult.php');
-        self::assertFileExists($this->tempDir . '/pkg/src/UpgradeManager.php');
-        self::assertFileDoesNotExist($this->tempDir . '/pkg/HISTORY.md');
-        self::assertFileDoesNotExist($this->tempDir . '/pkg/CHANGELOG');
-    }
-
-    public function testDoesNotDeleteFrontendSourceFilesMatchingDocPrefixes(): void
-    {
-        mkdir($this->tempDir . '/pkg/install/components/iblock.history', 0777, true);
-        file_put_contents($this->tempDir . '/pkg/install/components/iblock.history/history.ts', 'export const x = 1;');
-        file_put_contents($this->tempDir . '/pkg/install/components/iblock.history/changelog.js', 'console.log(1);');
-        file_put_contents($this->tempDir . '/pkg/install/components/iblock.history/history.css', '.a {}');
-        file_put_contents($this->tempDir . '/pkg/HISTORY.md', '# History');
-
-        $config = CleanupConfig::create(targetPath: $this->tempDir);
-        new Cleaner()->run($config, static function (string $path): void {});
-
-        self::assertFileExists($this->tempDir . '/pkg/install/components/iblock.history/history.ts');
-        self::assertFileExists($this->tempDir . '/pkg/install/components/iblock.history/changelog.js');
-        self::assertFileExists($this->tempDir . '/pkg/install/components/iblock.history/history.css');
-        self::assertFileDoesNotExist($this->tempDir . '/pkg/HISTORY.md');
-    }
-
-    public function testDryRunDoesNotDeleteFiles(): void
+    public function testDryRunDoesNotDeleteFilesAndCalculatesBytes(): void
     {
         $config = CleanupConfig::create(targetPath: $this->tempDir, dryRun: true);
         $matched = [];
 
-        $count = new Cleaner()->run($config, static function (string $path) use (&$matched): void {
-            $matched[] = basename($path);
-        });
+        $result = new Cleaner()->run(
+            $config,
+            static function (string $path, bool $isDir, int $bytes) use (&$matched): void {
+                $matched[] = basename($path);
+            },
+        );
 
-        self::assertGreaterThanOrEqual(4, $count);
+        self::assertGreaterThanOrEqual(4, $result['count']);
+        self::assertGreaterThan(0, $result['bytes']);
         self::assertFileExists($this->tempDir . '/pkg/tests/ServiceTest.php');
         self::assertFileExists($this->tempDir . '/pkg/README.md');
     }
@@ -109,7 +78,7 @@ final class CleanerTest extends TestCase
     {
         $config = CleanupConfig::create(targetPath: $this->tempDir, exclude: ['docs']);
 
-        new Cleaner()->run($config, static function (string $path): void {});
+        new Cleaner()->run($config, static function (string $path, bool $isDir, int $bytes): void {});
 
         self::assertFileExists($this->tempDir . '/pkg/src/Service.php');
         self::assertDirectoryDoesNotExist($this->tempDir . '/pkg/tests');
@@ -128,12 +97,65 @@ final class CleanerTest extends TestCase
         symlink($externalDir, $this->tempDir . '/pkg/tests-link');
 
         $config = CleanupConfig::create(targetPath: $this->tempDir, include: ['tests-link']);
-        new Cleaner()->run($config, static function (string $path): void {});
+        new Cleaner()->run($config, static function (string $path, bool $isDir, int $bytes): void {});
 
         self::assertFalse(is_link($this->tempDir . '/pkg/tests-link'));
         self::assertFileExists($importantFile);
 
         @unlink($importantFile);
         @rmdir($externalDir);
+    }
+
+    public function testDoesNotDeletePhpClassesMatchingDocPrefixes(): void
+    {
+        mkdir($this->tempDir . '/pkg/src/Chat/History', 0777, true);
+        file_put_contents($this->tempDir . '/pkg/src/Chat/History/ChatHistory.php', '<?php');
+        file_put_contents($this->tempDir . '/pkg/src/HistoryItemResult.php', '<?php');
+        file_put_contents($this->tempDir . '/pkg/src/UpgradeManager.php', '<?php');
+        file_put_contents($this->tempDir . '/pkg/HISTORY.md', '# History');
+        file_put_contents($this->tempDir . '/pkg/CHANGELOG', 'v1.0');
+
+        $config = CleanupConfig::create(targetPath: $this->tempDir);
+        new Cleaner()->run($config, static function (string $path, bool $isDir, int $bytes): void {});
+
+        self::assertFileExists($this->tempDir . '/pkg/src/Chat/History/ChatHistory.php');
+        self::assertFileExists($this->tempDir . '/pkg/src/HistoryItemResult.php');
+        self::assertFileExists($this->tempDir . '/pkg/src/UpgradeManager.php');
+        self::assertFileDoesNotExist($this->tempDir . '/pkg/HISTORY.md');
+        self::assertFileDoesNotExist($this->tempDir . '/pkg/CHANGELOG');
+    }
+
+    public function testDoesNotDeleteFrontendSourceFilesMatchingDocPrefixes(): void
+    {
+        mkdir($this->tempDir . '/pkg/install/components/dalee/iblock.history', 0777, true);
+        file_put_contents($this->tempDir . '/pkg/install/components/dalee/iblock.history/history.ts', 'export const x = 1;');
+        file_put_contents($this->tempDir . '/pkg/install/components/dalee/iblock.history/changelog.js', 'console.log(1);');
+        file_put_contents($this->tempDir . '/pkg/install/components/dalee/iblock.history/history.css', '.a {}');
+        file_put_contents($this->tempDir . '/pkg/HISTORY.md', '# History');
+
+        $config = CleanupConfig::create(targetPath: $this->tempDir);
+        new Cleaner()->run($config, static function (string $path, bool $isDir, int $bytes): void {});
+
+        self::assertFileExists($this->tempDir . '/pkg/install/components/dalee/iblock.history/history.ts');
+        self::assertFileExists($this->tempDir . '/pkg/install/components/dalee/iblock.history/changelog.js');
+        self::assertFileExists($this->tempDir . '/pkg/install/components/dalee/iblock.history/history.css');
+        self::assertFileDoesNotExist($this->tempDir . '/pkg/HISTORY.md');
+    }
+
+    public function testRespectsCleanupIgnoreRules(): void
+    {
+        $ignoreFile = $this->tempDir . '/.cleanupignore';
+        file_put_contents($ignoreFile, "pkg/README.md\ndocs/**\n");
+
+        $config = CleanupConfig::create(
+            targetPath: $this->tempDir,
+            ignoreList: IgnoreList::fromFiles($ignoreFile),
+        );
+
+        new Cleaner()->run($config, static function (string $path, bool $isDir, int $bytes): void {});
+
+        self::assertFileExists($this->tempDir . '/pkg/README.md');
+        self::assertDirectoryExists($this->tempDir . '/pkg/docs');
+        self::assertDirectoryDoesNotExist($this->tempDir . '/pkg/tests');
     }
 }

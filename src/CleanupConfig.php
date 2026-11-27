@@ -73,6 +73,7 @@ final readonly class CleanupConfig
         public array $patterns = self::DEFAULT_PATTERNS,
         public bool $dryRun = false,
         public bool $verbose = false,
+        public IgnoreList $ignoreList = new IgnoreList(),
     ) {}
 
     /**
@@ -85,6 +86,7 @@ final readonly class CleanupConfig
         array $exclude = [],
         bool $dryRun = false,
         bool $verbose = false,
+        ?IgnoreList $ignoreList = null,
     ): self {
         $patterns = self::DEFAULT_PATTERNS
                     |> (static fn(array $items): array => array_merge($items, $include))
@@ -99,6 +101,7 @@ final readonly class CleanupConfig
             patterns: $patterns,
             dryRun: $dryRun,
             verbose: $verbose,
+            ignoreList: $ignoreList ?? new IgnoreList(),
         );
     }
 }
